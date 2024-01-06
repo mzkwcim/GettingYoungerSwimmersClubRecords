@@ -1,12 +1,12 @@
 using HtmlAgilityPack;
-using Npgsql;
 using static System.Net.Mime.MediaTypeNames;
 using System.Text.RegularExpressions;
+using System.Diagnostics.Metrics;
 class MainC
 {
     public static void Main(string[] args)
     {
-        string[] ar = Scraper.URL("https://www.swimrankings.net/index.php?page=rankingDetail&clubId=65773&gender=1&course=SCM&agegroup=11&stroke=0&season=-1");
+        string[] ar = Scraper.URL("https://www.swimrankings.net/index.php?page=rankingDetail&clubId=76965&gender=1&course=SCM&agegroup=11&stroke=0&season=-1");
         foreach (string s in ar)
         {
             GetYoungerOne(s);
@@ -14,27 +14,39 @@ class MainC
     }
     public static void GetYoungerOne(string s)
     {
-        ConsoleWritter.WriterLoop(s, ListGetter.BirthDates(s), ListGetter.EstablishmentDate(s));
+        string dystans = Sanitizer.LapChecker(Scraper.Loader(s).DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
+        if (!String.IsNullOrEmpty(dystans))
+        {
+            ConsoleWritter.AgeGroup(s, ListGetter.BirthDates(s), ListGetter.EstablishmentDate(s), 10);
+        }
     }
-
 }
 class ConsoleWritter
 {
-    public static void WriterLoop(string s, List<string> birthDates, List<string> establishmentDates)
+    public static void AgeGroup(string s, List<string> birthDates, List<string> establishmentDates, int age)
     {
-        var htmlDocument = Scraper.Loader(s);
-        for (int i = 0; i < establishmentDates.Count; i++)
+        double places = Scraper.GetPlacesModulo25Celling(s);
+        int counter = 1;
+        int helper = 0;
+        for (int j = 0; j < places && helper != 1; j++)
         {
-            if (Convert.ToInt32(establishmentDates[i]) - Convert.ToInt32(birthDates[i]) == 10)
+            var htmlDocument = Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
+            int gotto = Calculator.EndWith(j, places, s);
+            for (int i = 0; i < gotto; i++)
             {
-                string name = Format.ToTitleString(htmlDocument.DocumentNode.SelectNodes("//td[@class='fullname']")[i].InnerText);
-                string time = htmlDocument.DocumentNode.SelectNodes("//td[@class='time']")[i].InnerText;
-                string dystans = Format.StrokeTranslation(htmlDocument.DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
-                string data = Format.DateTranslation(htmlDocument.DocumentNode.SelectNodes("//td[@class='date']")[i].InnerText);
-                string miasto = htmlDocument.DocumentNode.SelectNodes("//td[@class='city']")[i].InnerText;
-                Console.WriteLine(dystans + " " + name + " " + time + " " + data + " " + miasto);
-                break;
+                if (Convert.ToInt32(establishmentDates[i]) - Convert.ToInt32(birthDates[i]) == age)
+                {
+                    string name = Format.ToTitleString(htmlDocument.DocumentNode.SelectNodes("//td[@class='fullname']")[i].InnerText);
+                    string time = htmlDocument.DocumentNode.SelectNodes("//td[@class='time']")[i].InnerText;
+                    string dystans = Format.StrokeTranslation(htmlDocument.DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
+                    string data = Format.DateTranslation(htmlDocument.DocumentNode.SelectNodes("//td[@class='date']")[i].InnerText);
+                    string miasto = htmlDocument.DocumentNode.SelectNodes("//td[@class='city']")[i].InnerText.Replace("&nbsp;"," ");
+                    Console.WriteLine($"{dystans} {name} {time} {data} {miasto}");
+                    helper = 1;
+                    break;
+                }
             }
+            counter += 25;
         }
     }
 }
@@ -42,36 +54,62 @@ class ListGetter
 {
     public static List<string> BirthDates(string s)
     {
-        var birthDate = Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='rankingPlace']");
+        double places = Scraper.GetPlacesModulo25Celling(s);
         List<string> birthDates = new List<string>();
-        for (int i = 0; i < birthDate.Count; i++)
+        int counter = 1;
+        for (int j = 0; j < places; j++)
         {
-            string date = Sanitizer.DotsSanitizer(Sanitizer.TextSanitizer(birthDate[i].InnerText));
-            if (!String.IsNullOrEmpty(date))
+            var birthDate = HelperList(counter, s, "//td[@class='rankingPlace']");
+            int gotto = Calculator.EndWith(j, places, s);
+            for (int i = 0; i < gotto*5; i++)
             {
-                birthDates.Add(date);
+                string date = Sanitizer.DotsSanitizer(Sanitizer.TextSanitizer(birthDate[i].InnerText));
+                if (!String.IsNullOrEmpty(date))
+                {
+                    birthDates.Add(date);
+                }
             }
+            counter += 25;
         }
         return birthDates;
     }
     public static List<string> EstablishmentDate(string s)
     {
-        var establishmentDate = Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='date']");
+        double places = Scraper.GetPlacesModulo25Celling(s);
+        int counter = 1;
         List<string> establishmentDates = new List<string>();
-        for (int i = 0; i < establishmentDate.Count; i++)
+        for (int j = 0; j < places; j++)
         {
-            establishmentDates.Add(Sanitizer.DateSanitizer(establishmentDate[i].InnerText));
+            HtmlAgilityPack.HtmlNodeCollection establishmentDate = HelperList(counter, s, "//td[@class='date']");
+            int gotto = Calculator.EndWith(j, places, s);
+            for (int i = 0; i < gotto; i++)
+            {
+                string date = Sanitizer.DateSanitizer(establishmentDate[i].InnerText);
+                if (!String.IsNullOrEmpty(date))
+                {
+                    establishmentDates.Add(date);
+                }
+            }
+            counter += 25;
         }
         return establishmentDates;
     }
+    public static HtmlAgilityPack.HtmlNodeCollection HelperList(int counter, string s, string helper) => Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}")).DocumentNode.SelectNodes(helper);
+
+}
+class Calculator
+{
+    public static int EndWith(int j, double places, string s) => (j != places - 1) ? 25 : Scraper.GetAbsolutePlaces(s) - (((int)places - 1) * 25);
 }
 class Scraper
 {
+    public static double GetPlacesModulo25Celling(string s) => Math.Ceiling(Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]) / 25.0);
+    public static int GetAbsolutePlaces(string s) => Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]);
     public static HtmlAgilityPack.HtmlDocument Loader(string url)
     {
-        var httpClient = new HttpClient();
+        HttpClient httpClient = new HttpClient();
         var html = httpClient.GetStringAsync(url).Result;
-        var htmlDocument = new HtmlDocument();
+        HtmlDocument htmlDocument = new HtmlDocument();
         htmlDocument.LoadHtml(html);
         return htmlDocument;
     }
@@ -235,4 +273,5 @@ class Sanitizer
     public static string DateSanitizer(string converter) => converter.Split("&nbsp;")[converter.Split("&nbsp;").Length - 1];
     public static string TextSanitizer(string date) => (!date.Any(Char.IsLetter)) ? date : "";
     public static string DotsSanitizer(string date) => (!date.Contains(".") && !date.Contains("-")) ? date : "";
+    public static string LapChecker(string distance) => distance.Contains("Lap") ? distance="" : distance;
 }
