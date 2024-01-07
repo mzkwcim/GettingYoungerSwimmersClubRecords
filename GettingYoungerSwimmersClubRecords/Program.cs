@@ -14,34 +14,28 @@ class MainC
     }
     public static void GetYoungerOne(string s)
     {
-        string dystans = Sanitizer.LapChecker(Scraper.Loader(s).DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
-        if (!String.IsNullOrEmpty(dystans))
+        if (!Scraper.Loader(s).DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText.Contains("Lap"))
         {
-            ConsoleWritter.AgeGroup(s, ListGetter.BirthDates(s), ListGetter.EstablishmentDate(s), 10);
+            ConsoleWritter.AgeGroup(s, ListGetter.Age(s), 10);
         }
     }
 }
 class ConsoleWritter
 {
-    public static void AgeGroup(string s, List<string> birthDates, List<string> establishmentDates, int age)
+    public static void AgeGroup(string s, List<int> ages, int age)
     {
         double places = Scraper.GetPlacesModulo25Celling(s);
         int counter = 1;
         int helper = 0;
         for (int j = 0; j < places && helper != 1; j++)
         {
-            var htmlDocument = Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
-            int gotto = Calculator.EndWith(j, places, s);
+            HtmlDocument htmlDocument = Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
+            int gotto = Calculator.EndWith(j, places, (counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
             for (int i = 0; i < gotto; i++)
             {
-                if (Convert.ToInt32(establishmentDates[i]) - Convert.ToInt32(birthDates[i]) == age)
+                if (Convert.ToInt32(ages[(j*25)+i]) == age)
                 {
-                    string name = Format.ToTitleString(htmlDocument.DocumentNode.SelectNodes("//td[@class='fullname']")[i].InnerText);
-                    string time = htmlDocument.DocumentNode.SelectNodes("//td[@class='time']")[i].InnerText;
-                    string dystans = Format.StrokeTranslation(htmlDocument.DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
-                    string data = Format.DateTranslation(htmlDocument.DocumentNode.SelectNodes("//td[@class='date']")[i].InnerText);
-                    string miasto = htmlDocument.DocumentNode.SelectNodes("//td[@class='city']")[i].InnerText.Replace("&nbsp;"," ");
-                    Console.WriteLine($"{dystans} {name} {time} {data} {miasto}");
+                    Scraper.RecordHolder(htmlDocument, i);
                     helper = 1;
                     break;
                 }
@@ -60,7 +54,7 @@ class ListGetter
         for (int j = 0; j < places; j++)
         {
             var birthDate = HelperList(counter, s, "//td[@class='rankingPlace']");
-            int gotto = Calculator.EndWith(j, places, s);
+            int gotto = Calculator.EndWith(j, places, (counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
             for (int i = 0; i < gotto*5; i++)
             {
                 string date = Sanitizer.DotsSanitizer(Sanitizer.TextSanitizer(birthDate[i].InnerText));
@@ -95,6 +89,21 @@ class ListGetter
         return establishmentDates;
     }
     public static HtmlAgilityPack.HtmlNodeCollection HelperList(int counter, string s, string helper) => Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}")).DocumentNode.SelectNodes(helper);
+    public static List<int> Age(string s)
+    {
+        List<string> ed = EstablishmentDate(s);
+        List<string> bd = BirthDates(s);
+        List<int> age = new List<int>();
+        for (int i = 0;i < bd.Count; i++)
+        {
+            age.Add(Convert.ToInt32(ed[i]) - Convert.ToInt32(bd[i]));
+            if (age[i] == 10)
+            {
+                break;
+            }
+        }
+        return age;
+    }
 
 }
 class Calculator
@@ -103,6 +112,15 @@ class Calculator
 }
 class Scraper
 {
+    public static void RecordHolder(HtmlDocument htmlDocument, int i)
+    {
+        string name = Format.ToTitleString(htmlDocument.DocumentNode.SelectNodes("//td[@class='fullname']")[i].InnerText);
+        string time = htmlDocument.DocumentNode.SelectNodes("//td[@class='time']")[i].InnerText;
+        string dystans = Format.StrokeTranslation(htmlDocument.DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
+        string data = Format.DateTranslation(htmlDocument.DocumentNode.SelectNodes("//td[@class='date']")[i].InnerText);
+        string miasto = htmlDocument.DocumentNode.SelectNodes("//td[@class='city']")[i].InnerText.Replace("&nbsp;", " ");
+        Console.WriteLine($"{dystans} {name} {time} {data} {miasto}");
+    }
     public static double GetPlacesModulo25Celling(string s) => Math.Ceiling(Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]) / 25.0);
     public static int GetAbsolutePlaces(string s) => Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]);
     public static HtmlAgilityPack.HtmlDocument Loader(string url)
@@ -128,122 +146,41 @@ class Format
 {
     public static string DateTranslation(string converter)
     {
-        string date;
         string[] words = converter.Split("&nbsp;");
-        if (words.Length == 3)
+        return (words.Length == 4) ? $"{words[1]} {GetMonthTranslation(words[2])} {words[3]}" : $"{words[0]} {GetMonthTranslation(words[1])} {words[2]}";
+    }
+    private static string GetMonthTranslation(string abbreviation)
+    {
+        switch (abbreviation)
         {
-            switch (words[1])
-            {
-                case "Jan":
-                    date = words[0] + " Stycznia " + words[2];
-                    return date;
-                case "Feb":
-                    date = words[0] + " Lutego " + words[2];
-                    return date;
-                case "Mar":
-                    date = words[0] + " Marca " + words[2];
-                    return date;
-                case "Apr":
-                    date = words[0] + " Kwietnia " + words[2];
-                    return date;
-                case "May":
-                    date = words[0] + " Maja " + words[2];
-                    return date;
-                case "Jun":
-                    date = words[0] + " Czerwca " + words[2];
-                    return date;
-                case "Jul":
-                    date = words[0] + " Lipca " + words[2];
-                    return date;
-                case "Aug":
-                    date = words[0] + " Sierpnia " + words[2];
-                    return date;
-                case "Sep":
-                    date = words[0] + " Września " + words[2];
-                    return date;
-                case "Oct":
-                    date = words[0] + " Października " + words[2];
-                    return date;
-                case "Nov":
-                    date = words[0] + " Listopada " + words[2];
-                    return date;
-                case "Dec":
-                    date = words[0] + " Grudnia " + words[2];
-                    return date;
-                default:
-                    return "";
-            }
-        }
-        else
-        {
-            switch (words[2])
-            {
-                case "Jan":
-                    date = words[1] + " Stycznia " + words[3];
-                    return date;
-                case "Feb":
-                    date = words[1] + " Lutego " + words[3];
-                    return date;
-                case "Mar":
-                    date = words[1] + " Marca " + words[3];
-                    return date;
-                case "Apr":
-                    date = words[1] + " Kwietnia " + words[3];
-                    return date;
-                case "May":
-                    date = words[1] + " Maja " + words[3];
-                    return date;
-                case "Jun":
-                    date = words[1] + " Czerwca " + words[3];
-                    return date;
-                case "Jul":
-                    date = words[1] + " Lipca " + words[3];
-                    return date;
-                case "Aug":
-                    date = words[1] + " Sierpnia " + words[3];
-                    return date;
-                case "Sep":
-                    date = words[1] + " Września " + words[3];
-                    return date;
-                case "Oct":
-                    date = words[1] + " Października " + words[3];
-                    return date;
-                case "Nov":
-                    date = words[1] + " Listopada " + words[3];
-                    return date;
-                case "Dec":
-                    date = words[1] + " Grudnia " + words[3];
-                    return date;
-                default:
-                    return "";
-            }
+            case "Jan": return "Stycznia";
+            case "Feb": return "Lutego";
+            case "Mar": return "Marca";
+            case "Apr": return "Kwietnia";
+            case "May": return "Maja";
+            case "Jun": return "Czerwca";
+            case "Jul": return "Lipca";
+            case "Aug": return "Sierpnia";
+            case "Sep": return "Września";
+            case "Oct": return "Października";
+            case "Nov": return "Listopada";
+            case "Dec": return "Grudnia";
+            default: return "";
         }
     }
     public static string StrokeTranslation(string distance)
     {
         try
         {
-            string stroke;
             string[] words = distance.Split(' ');
             switch (words[1])
             {
-                case "Freestyle":
-                    stroke = words[0] + " Dowolnym";
-                    return stroke;
-                case "Backstroke":
-                    stroke = words[0] + " Grzbietowym";
-                    return stroke;
-                case "Breaststroke":
-                    stroke = words[0] + " Klasycznym";
-                    return stroke;
-                case "Butterfly":
-                    stroke = words[0] + " Motylkowym";
-                    return stroke;
-                case "Medley":
-                    stroke = words[0] + " Zmiennym";
-                    return stroke;
-                default:
-                    return "";
+                case "Freestyle": return words[0] + " Dowolnym";
+                case "Backstroke": return words[0] + " Grzbietowym";
+                case "Breaststroke": return words[0] + " Klasycznym";
+                case "Butterfly": return words[0] + " Motylkowym";
+                case "Medley": return words[0] + " Zmiennym";
+                default: return "";
             }
         }
         catch
@@ -253,19 +190,12 @@ class Format
     }
     public static string ToTitleString(string fullname)
     {
-        string[] dividedFullName = fullname.Replace(",", "").Split(' ');
-        string[] newFullName = new string[dividedFullName.Length];
-        for (int i = 0; i < dividedFullName.Length; i++)
+        string[] words = fullname.Split(' ');
+        for (int i = 0; i < words.Length; i++)
         {
-            int adder = 0;
-            foreach (char c in dividedFullName[i])
-            {
-                newFullName[i] += (adder == 0) ? c.ToString().ToUpper() : c.ToString().ToLower();
-                adder++;
-            }
+            words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
         }
-        string newFullName2 = (string.Join(" ", newFullName)).Replace(",", "");
-        return newFullName2;
+        return string.Join(" ", words).Replace(",", "");
     }
 }
 class Sanitizer
