@@ -1,51 +1,114 @@
 using HtmlAgilityPack;
-using static System.Net.Mime.MediaTypeNames;
-using System.Text.RegularExpressions;
-using System.Diagnostics.Metrics;
-class MainC
+Loops.MainLoop();
+class Scraper
 {
-    public static void Main(string[] args)
+    public static double GetPlacesModulo25Celling(string s) => Math.Ceiling(Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]) / 25.0);
+    public static int GetAbsolutePlaces(string s) => Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]);
+    public static HtmlAgilityPack.HtmlDocument Loader(string url)
     {
-        string[] ar = Scraper.URL("https://www.swimrankings.net/index.php?page=rankingDetail&clubId=76965&gender=1&course=SCM&agegroup=11&stroke=0&season=-1");
-        foreach (string s in ar)
-        {
-            GetYoungerOne(s);
-        }
+        var httpClient = new HttpClient();
+        var html = httpClient.GetStringAsync(url).Result;
+        var htmlDocument = new HtmlDocument();
+        htmlDocument.LoadHtml(html);
+        return htmlDocument;
     }
-    public static void GetYoungerOne(string s)
+    public static string[] URL(string url)
     {
-        if (!Scraper.Loader(s).DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText.Contains("Lap"))
+        var URLlink = Loader(url).DocumentNode.SelectNodes("//td[@class='swimstyle']//a[@href]");
+        string[] linki = new string[URLlink.Count];
+        for (int i = 0; i < URLlink.Count; i++)
         {
-            ConsoleWritter.AgeGroup(s, ListGetter.Age(s), 10);
+            linki[i] = "https://www.swimrankings.net/index.php" + URLlink[i].GetAttributeValue("href", "").Replace("amp;", "");
         }
+        return linki;
     }
 }
-class ConsoleWritter
+class Loops
 {
-    public static void AgeGroup(string s, List<int> ages, int age)
+    public static void MainLoop()
     {
-        double places = Scraper.GetPlacesModulo25Celling(s);
-        int counter = 1;
-        int helper = 0;
-        for (int j = 0; j < places && helper != 1; j++)
+        GenderLoop("https://www.swimrankings.net/index.php?page=rankingDetail&clubId=65774&gender=1&season=-1&course=SCM&stroke=0&agegroup=0");
+    }
+    public static void GenderLoop(string url)
+    {
+        for (int i = 0 ; i < 2 ; i++)
         {
-            HtmlDocument htmlDocument = Scraper.Loader((counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
-            int gotto = Calculator.EndWith(j, places, (counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
-            for (int i = 0; i < gotto; i++)
-            {
-                if (Convert.ToInt32(ages[(j*25)+i]) == age)
-                {
-                    Scraper.RecordHolder(htmlDocument, i);
-                    helper = 1;
-                    break;
-                }
-            }
-            counter += 25;
+            PoolCourseLoop(url.Replace("gender=1", $"gender={i + 1}"));
         }
     }
+    public static void PoolCourseLoop(string url)
+    {
+        for (int i = 0 ; i < 2 ; i++ )
+        {
+            LinksLoop((i == 0) ? url : url.Replace("course=SCM", "course=LCM"));
+            Console.ReadKey();
+        }
+    }
+    public static void LinksLoop(string url)
+    {
+        string[] linki = Scraper.URL(url);
+        for (int i = 0 ; i < linki.Length ; i++ )
+        {
+            Console.WriteLine(GetMasterTime(linki[i]));
+        }
+    }
+    public static string GetMasterTime(string singleUrl)
+    {
+        int escape = 0, inter = 0, helper = 0;
+        string master = "";
+        string distance = Scraper.Loader(singleUrl).DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText;
+        Console.WriteLine(distance);
+        if (!distance.Contains("Lap") && !(distance.Split(" ").Length == 4))
+        {
+            while (escape == 0)
+            {
+                try
+                {
+                    master += Scraper.Loader(singleUrl.Replace("firstPlace=1", $"firstPlace={(inter * 25) + 1}")).DocumentNode.SelectSingleNode("//a[@class='time'][sup]").InnerText;
+                    if (!String.IsNullOrEmpty(master))
+                    {
+                        Console.WriteLine("jestem tutaj");
+                        var time = Scraper.Loader(singleUrl.Replace("firstPlace=1", $"firstPlace={(inter * 25) + 1}")).DocumentNode.SelectNodes("//td[@class='time']");
+                        int gaga = 0;
+                        foreach (var c in time)
+                        {
+                            if (c.InnerText == master)
+                            {
+                                /*
+                                string gosc = Scraper.Loader(singleUrl.Replace("firstPlace=1", $"firstPlace={(inter * 25) + 1}")).DocumentNode.SelectNodes("//td[@class='fullname']")[gaga].InnerText;
+                                Console.Write(gosc + " ");
+                                */
+                                break;
+                            }
+                            gaga++;
+                        }
+                        string gosc = Scraper.Loader(singleUrl.Replace("firstPlace=1", $"firstPlace={(inter * 25) + 1}")).DocumentNode.SelectNodes("//td[@class='fullname']")[gaga].InnerText;
+                        Console.WriteLine(gaga + " " + gosc);
+                        Console.WriteLine(ListGetter.BirthDate(singleUrl.Replace("firstPlace=1", $"firstPlace={(inter * 25) + 1}"), gaga));
+                    }
+                    escape = 1;
+                }
+                catch
+                {
+                    Console.WriteLine("Na tej stronie nie było rekordu");
+                    inter++;
+                }
+                helper++;
+            }
+        }
+        return master;
+    }
+}
+class Calculator
+{
+    public static int EndWith(int j, double places, string s) => (j != places - 1) ? 25 : Scraper.GetAbsolutePlaces(s) - (((int)places - 1) * 25);
 }
 class ListGetter
 {
+    public static int BirthDate(string s, int gaga)
+    {
+        return Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='rankingPlace']")[(gaga*5)-4].InnerText);
+    }
     public static List<string> BirthDates(string s)
     {
         double places = Scraper.GetPlacesModulo25Celling(s);
@@ -55,7 +118,7 @@ class ListGetter
         {
             var birthDate = HelperList(counter, s, "//td[@class='rankingPlace']");
             int gotto = Calculator.EndWith(j, places, (counter == 1) ? s.Replace("firstPlace=1", $"firstPlace={counter}") : s.Replace($"firstPlace={counter - 25}", $"firstPlace={counter}"));
-            for (int i = 0; i < gotto*5; i++)
+            for (int i = 0; i < gotto * 5; i++)
             {
                 string date = Sanitizer.DotsSanitizer(Sanitizer.TextSanitizer(birthDate[i].InnerText));
                 if (!String.IsNullOrEmpty(date))
@@ -94,7 +157,7 @@ class ListGetter
         List<string> ed = EstablishmentDate(s);
         List<string> bd = BirthDates(s);
         List<int> age = new List<int>();
-        for (int i = 0;i < bd.Count; i++)
+        for (int i = 0; i < bd.Count; i++)
         {
             age.Add(Convert.ToInt32(ed[i]) - Convert.ToInt32(bd[i]));
             if (age[i] == 10)
@@ -106,41 +169,12 @@ class ListGetter
     }
 
 }
-class Calculator
+class Sanitizer
 {
-    public static int EndWith(int j, double places, string s) => (j != places - 1) ? 25 : Scraper.GetAbsolutePlaces(s) - (((int)places - 1) * 25);
-}
-class Scraper
-{
-    public static void RecordHolder(HtmlDocument htmlDocument, int i)
-    {
-        string name = Format.ToTitleString(htmlDocument.DocumentNode.SelectNodes("//td[@class='fullname']")[i].InnerText);
-        string time = htmlDocument.DocumentNode.SelectNodes("//td[@class='time']")[i].InnerText;
-        string dystans = Format.StrokeTranslation(htmlDocument.DocumentNode.SelectSingleNode("//td[@class='titleCenter']").InnerText);
-        string data = Format.DateTranslation(htmlDocument.DocumentNode.SelectNodes("//td[@class='date']")[i].InnerText);
-        string miasto = htmlDocument.DocumentNode.SelectNodes("//td[@class='city']")[i].InnerText.Replace("&nbsp;", " ");
-        Console.WriteLine($"{dystans} {name} {time} {data} {miasto}");
-    }
-    public static double GetPlacesModulo25Celling(string s) => Math.Ceiling(Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]) / 25.0);
-    public static int GetAbsolutePlaces(string s) => Convert.ToInt32(Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']")[Scraper.Loader(s).DocumentNode.SelectNodes("//td[@class='navigation']").Count - 1].InnerText.Split(" ")[4]);
-    public static HtmlAgilityPack.HtmlDocument Loader(string url)
-    {
-        HttpClient httpClient = new HttpClient();
-        var html = httpClient.GetStringAsync(url).Result;
-        HtmlDocument htmlDocument = new HtmlDocument();
-        htmlDocument.LoadHtml(html);
-        return htmlDocument;
-    }
-    public static string[] URL(string url)
-    {
-        var URLlink = Loader(url).DocumentNode.SelectNodes("//td[@class='swimstyle']//a[@href]");
-        string[] linki = new string[URLlink.Count];
-        for (int i = 0; i < URLlink.Count; i++)
-        {
-            linki[i] = "https://www.swimrankings.net/index.php" + URLlink[i].GetAttributeValue("href", "").Replace("amp;", "");
-        }
-        return linki;
-    }
+    public static string DateSanitizer(string converter) => converter.Split("&nbsp;")[converter.Split("&nbsp;").Length - 1];
+    public static string TextSanitizer(string date) => (!date.Any(Char.IsLetter)) ? date : "";
+    public static string DotsSanitizer(string date) => (!date.Contains(".") && !date.Contains("-")) ? date : "";
+    public static string LapChecker(string distance) => distance.Contains("Lap") ? distance = "" : distance;
 }
 class Format
 {
@@ -197,11 +231,4 @@ class Format
         }
         return string.Join(" ", words).Replace(",", "");
     }
-}
-class Sanitizer
-{
-    public static string DateSanitizer(string converter) => converter.Split("&nbsp;")[converter.Split("&nbsp;").Length - 1];
-    public static string TextSanitizer(string date) => (!date.Any(Char.IsLetter)) ? date : "";
-    public static string DotsSanitizer(string date) => (!date.Contains(".") && !date.Contains("-")) ? date : "";
-    public static string LapChecker(string distance) => distance.Contains("Lap") ? distance="" : distance;
 }
